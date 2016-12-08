@@ -1,0 +1,1310 @@
+---
+title: "Prosper loans data set - An exploratory data analysis"
+author: "Johannes Bock"
+date: "9 Dezember 2016"
+output: github_document
+---
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk.
+# This prevents the code from displaying in the knitted HTML output.
+# You should set echo=FALSE for all code chunks in your file.
+
+library(parcoords)
+library(randomForest)
+library(VIM)
+library(ggplot2)
+library(MissingDataGUI)
+library(stargazer)
+library(DT)
+library(knitr)
+library(lubridate)
+library(rgl)
+library(ggthemes)
+library(RColorBrewer)
+library(psych)
+library(GGally)
+library(corrplot)
+library(corrgram)
+library(wordcloud)
+library(gridExtra)
+library(zoo)
+library(dplyr)
+library(treemap)
+library(magrittr)
+library(plot3D)
+library(rgl)
+library(Rtsne)
+library(readr)
+library(plotly)
+library(yaml)
+library(partykit)
+source("https://raw.githubusercontent.com/janhove/janhove.github.io/master/RCode/sortLvls.R")
+knit_hooks$set(rgl = hook_rgl)
+knit_hooks$set(webgl = hook_webgl)
+```
+
+```{r echo=FALSE,setOptions, message=FALSE}
+library(googleVis)
+#op <- options(gvis.plot.tag='chart')
+```
+
+```{r echo=FALSE, results='asis', tidy=FALSE,Load_the_Data}
+# Load & sample the Data
+set.seed(200)
+loan<-read.csv("prosperLoanData.csv")
+var <- read.csv("Variables_list.csv")
+var<-as.vector(var[,1])
+
+
+#Select Variables
+df <- loan[ , names(loan) %in% var]
+df$ActualReturn<-(df$LP_InterestandFees+df$LP_ServiceFees+
+                      df$LP_CollectionFees-
+                      df$LP_GrossPrincipalLoss)/df$LoanOriginalAmount
+df$ClosedDate<-as.Date(df$ClosedDate)
+df$ListingCreationDate<-as.Date(df$ListingCreationDate)
+
+df$planned_close <- df$ListingCreationDate
+month(df$planned_close)<- month(df$planned_close)+ df$Term
+
+df$cohort_closed <- df$ClosedDate>=df$planned_close
+
+#Get sample from full dataset with 5.000 observations
+loan_sample<-df[sample(1:length(df$ListingNumber),5000),]
+
+daten <- df
+
+categories <-read.csv("ListingCategory.csv")
+daten<-dplyr::left_join(daten,categories,by="ListingCategory..numeric.")
+loan_sample<-dplyr::left_join(loan_sample,categories,by="ListingCategory..numeric.")
+status_class <- read.csv("Status.csv")
+daten <- dplyr::left_join(daten,status_class,by="LoanStatus")
+loan_sample <- dplyr::left_join(loan_sample,status_class,by="LoanStatus")
+
+daten$ListingCreationDate<-as.Date(daten$ListingCreationDate)
+
+daten$Quarter <- as.yearqtr(daten$ListingCreationDate,
+                                           format = "Q%q/%y")
+loan_sample$Quarter<-as.yearqtr(loan_sample$ListingCreationDate,
+                                          format = "Q%q/%y")
+closed <- c("Completed","Chargedoff","Defaulted")
+daten$Year<-as.factor(format(daten$ListingCreationDate,'%Y'))
+
+```
+
+
+In the following analysis I will conduct some exploratory data analysis on the Prosper Loans data set. 
+
+According to their website *"Prosper is America's first marketplace lending platform, with over $7 billion in funded loans. Prosper allows people to invest in each other in a way that is financially and socially rewarding."* See also the [Prosper Homepage](https://www.prosper.com/).
+
+The data set at hand contains 113,937 loans with 81 variables on each loan, including loan amount, borrower rate (or interest rate), current loan status, borrower income, borrower employment status, borrower credit history, and the latest payment information. The dataset contains loans created between 2005-Q4 and 2014-Q1.
+
+Variable Definitions for the Prosper Loans Dataset can be found here: [Variable Definitions](https://docs.google.com/spreadsheets/d/1gDyi_L4UvIrLTEC6Wri5nbaMmkGmLQBk-Yx3z0XDEtI/edit).
+
+For the following analysis I will focus on **24** variables, which I pre-selected based on my subjective assumptions. I expect that those variables will reveal some interesting insights about Prosper loans.
+
+#Missing data
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+compute_missing_pct(daten)
+MissingDataGUI(data=loan_sample)
+
+
+a<-aggr(loan_sample,sortVars=TRUE,numbers=TRUE,col=c('navyblue','red'))
+
+```
+
+![](C:/Users/bockj/Udacity/Data Analyst Nanodegree/Part 5/6_Final_project/Missing_values_map_2.png)
+
+Before starting with the analysis of the data set, I decided to first have a look at the missing data. From the missing data map above, I can conclude that the data set only has missing data for a few variables. Especially, the variables **TotalProsperLoans** and **ProsperPaymentsOneMonthPlusLate** have a lot of missing records. In both cases it is likely that missing records are equivalent to no previous loans and no late payments respectively. There are missing values for **ClosedDate**, since the data set contains loans which are still active. Moreover, **EstimatedReturn** and **ProsperScore** was only calculated for loans that originated after July 2009.
+
+# Univariate Plots Section
+
+In the following section I will look at the distributions, frequencies and key statistics of one variable at a time. 
+
+## Who borrows money on Prosper and why?
+
+First, I decided to focus on the borrowers and see who is using the platform and why are they using it.
+
+#### Number of loans by state
+```{r echo=FALSE, results='asis', tidy=FALSE}
+
+# BorrowerState
+freq<-as.data.frame(table(daten$BorrowerState))
+names(freq)<-c("State","Number_of_listings")
+
+op <- options(gvis.plot.tag = "chart")
+States <- gvisGeoChart(freq, "State", "Number_of_listings",
+                          options=list(region="US", 
+                                       displayMode="regions", 
+                                       resolution="provinces",
+                                       width=600, height=400))
+
+plot(States)
+
+```
+
+The visualization above clearly shows that most borrowers on Prosper come from California. This is not surprising for two reasons: (1) Prosper is a San Francisco, CA based company and (2) California is the home of Silicon Valley and therefore, it is likely that this state is more open-minded to new forms of lending.
+
+#### Occupations sized by frequency
+```{r echo=FALSE, webgl=TRUE,warning=FALSE,message=FALSE}
+#Occupation
+
+occ<-as.data.frame(table(daten$Occupation))
+occ<-subset(occ,Var1!="Other")
+pal2 <- brewer.pal(8,"Dark2")
+
+wordcloud(occ$Var1,occ$Freq,min.freq=2,
+max.words=Inf, random.order=FALSE, rot.per=.15,colors = pal2)
+
+```
+
+Moreover, most borrowers on Prosper indicate to be Professional, Computer Programmer, Administrative Assistant, Executive, Teacher or Analyst (Note that the visualization above exludes those, who indicated "Other" as occupation). Especially, the large number of borrowers who are Executives is surprising to me, since these people tend to be quite creditworthy and earn the fourth highest monthly salary, which we will see later. However, they choose to borrow on Prosper instead of going the conventional way and borrow with their bank. Maybe Prosper offers attractive interest rates for this group of people? **We will see this later.**
+
+```{r echo=FALSE, webgl=TRUE,warning=FALSE,message=FALSE}
+#Employment status 
+
+empstatus<-as.data.frame(table(daten$EmploymentStatus))
+empstatus$Var1 <- factor(empstatus$Var1, levels=empstatus[order(empstatus$Freq),"Var1"])
+
+ggplot(data = empstatus,aes(x=Var1,y=Freq))+
+  geom_bar(color="black",fill=I("#099DD9"),stat="identity") + coord_flip()+
+  scale_color_brewer(type='div')+
+  theme_tufte()+
+  xlab("Employment Status")+
+  ylab("count")
+```
+
+Most borrowers indicate "Employed" and "Full-Time" as employment status.
+
+
+```{r echo=FALSE, webgl=TRUE,warning=FALSE,message=FALSE}
+#Employment status duration
+c1<-ggplot(data=daten,aes(x=EmploymentStatusDuration))+
+  geom_histogram(color="black",fill=I("#099DD9"),binwidth = 20)+
+  scale_color_brewer(type='div')+
+  theme_tufte()+
+  xlab("Employment Status Duration (in months)")+
+  scale_x_continuous(breaks = seq(0,600,100))+
+  geom_vline(aes(xintercept=mean(EmploymentStatusDuration, na.rm=T)),
+               color="red", linetype="dashed", size=1)
+
+#StatedMonthlyIncome
+c2<-ggplot(data=subset(daten,!is.na(StatedMonthlyIncome)),
+       aes(x=StatedMonthlyIncome))+
+  geom_histogram(color="black",fill=I("#099DD9"),binwidth = 800)+
+  theme_tufte()+
+  scale_x_continuous(breaks = seq(0,25000,5000),limits = c(0,25000))+
+  geom_vline(aes(xintercept=mean(StatedMonthlyIncome, na.rm=T)),
+               color="red", linetype="dashed", size=1)
+
+
+
+#TotalProsperLoans
+c3<-ggplot(data=daten,aes(as.factor(TotalProsperLoans)))+
+  geom_bar(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  scale_x_discrete(breaks=seq(0,8,1))
+
+#Listing category
+
+category <- as.data.frame(table(daten$Category))
+category$Var1 <- factor(category$Var1, levels=category[order(category$Freq),"Var1"])
+
+c4<-ggplot(data=category,aes(x=Var1,y=Freq))+
+  geom_bar(color="black",fill=I("#099DD9"),stat = "identity")+
+  theme_tufte()+
+  coord_flip()+
+  xlab("Category")+
+  ylab("count")
+
+grid.arrange(c1,c2,c3,c4,ncol=2,nrow=2)
+```
+
+The histograms above reveal further insights about the borrowers on Prosper. The average **EmploymentStatusDuration** is about 8 years and almost all borrowers indicate a number between 0 and 200 months. Surprisingly, there are also a few borrowers that have been in the same status for more than 500 months (~40 years).
+
+Moreover, the average **StatedMonthlyIncome** is slightly above 5,000 USD, which is quite high. Looking at the histogram a majority of borrowers actually indicates a monthly income below 5,000 USD. It is important to note that I have also limited the x-Axis since some borrowers indicated a monthly income of more than 25.000 USD. Those are likely to be outliers.
+
+The high number of unavailabe **TotalProsperLoans** indicates that most borrowers on Prosper use the platform for the first time, assuming unavailable data indicates no previous loans with Prosper. However, some borrowers have used the platform before.
+
+Finally, most borrowers use the Prosper platform to consolidate their debts, to improve their homes and build their business.
+
+## Loan characteristics on Prosper
+
+In the following section I decided to have a closer look at the loans funded by the Prosper community. I am especially interested in the Returns for Investors, credit terms on Prosper and loan performance. 
+
+```{r echo=FALSE, webgl=TRUE,warning=FALSE,message=FALSE}
+#Actual Return and Number of Investors
+
+
+m1<- ggplot(subset(daten,LoanStatus == closed),aes(x=ActualReturn))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  geom_vline(aes(xintercept=quantile(ActualReturn, na.rm=T,probs=0.3)),
+               color="orange", linetype=5, size=1)+
+  geom_vline(aes(xintercept=quantile(ActualReturn, na.rm=T,probs=0.8)),
+               color="orange", linetype=5, size=1)+
+  geom_vline(aes(xintercept=median(ActualReturn, na.rm=T)),
+               color="green", linetype="dashed", size=1)+
+  scale_x_continuous(labels = scales::percent,breaks = seq(-1,1,0.2))
+
+
+m2 <- ggplot(daten,aes(x=Investors))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  scale_x_continuous(breaks = seq(0,700,50),limits = c(0,700))+
+  theme_tufte()+
+  geom_vline(aes(xintercept=median(Investors, na.rm=T)),
+               color="green", linetype="dashed", size=1)+
+  ylim(0,20000)
+grid.arrange(m1,m2)
+```
+
+First, I calculated a new variable **Actual Return**, since there was no such information available in the data set. However, information such as loan amounts, customer payments, losses, and fees are available in the data set and therefore actual return can be calculated (Note: Actual returns were only calculated for closed loans). From the plot above one can see that the actual returns are distributed unevenly. Even though, the majority of returns is positive (roughly 50% of the actual returns lie between 0% and 25%), there are quite a few negative returns. There are even loans, where the actual loss is greater than 100%. Looking into the data, this loss exceeding the amount of the original loan is caused by fairly high collection and service fees on defaulted loans. Those loans usually have a 100% Principal loss and fees increase the loss for investors even above and beyond the principal.
+
+Second, more than 50% of the loans are funded by at least 50 **Investors**, which clearly shows the crowd-sourcing character of the Prosper loans platform.
+
+```{r echo=FALSE,results='asis', tidy=FALSE}
+
+#LoanOriginalAmount
+b1 <-ggplot(data=daten,aes(x=LoanOriginalAmount))+
+  geom_histogram(color="black",fill=I("#099DD9"),binwidth=600)+
+  theme_tufte()+
+  scale_x_continuous(breaks = seq(0,35000,5000))
+
+#Loan status
+
+
+group_status <- group_by(daten,LoanStatus)
+group_status_count <- summarise(group_status,
+                                count=n())
+
+group_status_count <- dplyr::left_join(group_status_count,
+                                       status_class,by="LoanStatus")
+group_status_count<-arrange(group_status_count,desc(count))
+
+
+group_status_count$LoanStatus_sort<-
+  sortLvlsByVar.fnc(group_status_count$LoanStatus,
+                                                 group_status_count$count)
+
+
+b2<-ggplot(group_status_count,aes(x=LoanStatus_sort,y=count,fill=Status))+
+  geom_bar(stat="identity")+
+  theme_tufte()+
+  coord_flip()+
+  xlab("LoanStatus")
+
+grid.arrange(b1,b2,nrow=2)
+```
+
+The **LoanOriginalAmount** plot indicates that borrowers usually ask for an amount less than 15.000 USD, even though there are also loans with much higher principals. Especially 5,000, 10,000 and 15,000 USD loans are very popular on Prosper.
+
+Looking at the frequencies of **loan status**, Most loans in the data set are either completed or currently being paid back. However, there are about 19,000 non-performing loans in the data set, which equals roughly 15% of total observations. Later in this analysis I will look at some factors which potentially determine or predict loan performance.
+
+```{r echo=FALSE,results='asis', tidy=FALSE}
+#LoanOriginationQuarter & ListingCreationDate (With Google Calendar)
+
+                                          
+ggplot(data=daten,aes(x=Quarter))+
+  geom_bar(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")+
+  scale_x_yearqtr(format = "%Y-Q%q",
+                  breaks=seq(from= min(daten$Quarter), 
+                  to = max(daten$Quarter), by = 0.25))
+  
+```
+
+The Prosper Platform was founded in 2005 and the number of listings has increased ever since. However, looking at the timeline above, the platform went through severe setbacks especially in 2008 and 2009 when the global financial crisis hit the banking sector. But Prosper managed to recover and exponentially increased its popularity up until 2014. When looking at this quarterly trend I got curious if there were some interesting patterns when looking at the number of listings created on a daily basis.
+
+```{r echo=FALSE,results='asis', tidy=FALSE}
+date <- subset(daten,ListingCreationDate>=as.Date("2013-01-01") &
+                 ListingCreationDate<as.Date("2014-01-01"))
+
+daily_freq <- as.data.frame(table(date$ListingCreationDate))
+daily_freq$Var1<-as.Date(daily_freq$Var1)
+Cal <- gvisCalendar(daily_freq, 
+                    datevar="Var1", 
+                    numvar="Freq",
+                    options=list(
+                      title="Number of daily listings in 2013",
+                      height=200,
+                      width = 1500,
+                      calendar="{yearLabel: { fontName: 'Times-Roman',
+                               fontSize: 60, color: '#1A8763', bold: true},
+                               cellSize: 14,
+                               cellColor: { stroke: 'red', strokeOpacity: 0.2 },
+                               focusedCellColor: {stroke:'red'}}"))
+plot(Cal)
+```
+
+When examining the calendar visualisation above, one can immediately see that most listings in 2013 were created between September and October. Since we could see that from the quarterly visualisation already, it is more interesting to look at the horizontal patterns for weekdays. Having a close look one can see that for Sundays and Saturdays the coloring is lighter than for business days. Hence, it seems that borrowers on Prosper create their listings more often on business days instead of weekends. 
+
+```{r echo=FALSE,results='asis', tidy=FALSE,warning=FALSE,message=FALSE}
+#MonthlyLoanPayment
+p1<-ggplot(data=daten,aes(x=MonthlyLoanPayment))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  scale_x_continuous(limits = c(0,1500))+
+  geom_vline(aes(xintercept=median(MonthlyLoanPayment, na.rm=T)),
+               color="green", linetype="dashed", size=1)
+
+#Term (The length of the loan expressed in months.)
+daten$Term<-as.factor(daten$Term)
+p2<-ggplot(data=daten,aes(x=Term))+
+  geom_bar(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  xlab("Term (in Months)")
+
+#BorrowerRate & EstimatedReturn
+p3<-ggplot(daten,aes(x=BorrowerRate))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  scale_x_continuous(labels = scales::percent)+
+  geom_vline(aes(xintercept=median(BorrowerRate, na.rm=T)),
+               color="green", linetype="dashed", size=1)
+
+p4 <- ggplot(daten,aes(x=EstimatedReturn))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  scale_x_continuous(limits=c(0,0.25),labels = scales::percent)+
+  geom_vline(aes(xintercept=median(EstimatedReturn, na.rm=T)),
+               color="green", linetype="dashed", size=1)
+
+grid.arrange(p1,p2,p3,p4,ncol=2,nrow=2)
+```
+
+More than 50% of borrowers have less than 250 USD of **MonthlyLoanPayment**. Moreover, most loans on Prosper have a **duration** of 3 years, but it is possible to get 12 and 60 months loans. The median **interest rate** on Prosper is about 19%, which is fairly high and probably much higher than for conventional loans. The median **EstimatedReturn** for investors calculated by Prosper since July 2009 is about 9%. This is a significant difference between interest rate and investor return, which represents the markup and costs of Prosper. Later in this analysis I will also compare actual return and estimated return for an appropriate period of time.
+
+## Ratings on Prosper
+
+In order to assess the quality of Prosper loans, I not only want to look at loan performance but also at borrower ratings which are assigned ex ante and should help to identify risky investments.
+
+```{r echo=FALSE, webgl=TRUE,warning=FALSE,message=FALSE}
+
+
+#ProsperScore
+a1<-ggplot(daten,aes(x=ProsperScore))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  scale_x_continuous(breaks = seq(1,11,1))
+
+#CreditScoreRangeLower & CreditScoreRangeUpper
+upper<-as.data.frame(daten$CreditScoreRangeUpper)
+colnames(upper) <- c("CreditScore")
+upper$type<-"CreditScoreRangeUpper"
+lower<-as.data.frame(daten$CreditScoreRangeLower)
+colnames(lower) <- c("CreditScore")
+lower$type<-"CreditScoreRangeLower"
+
+creditscores <- rbind(upper,lower)
+
+a2<-ggplot(creditscores,aes(x=CreditScore,fill=type))+
+  geom_histogram(alpha=.5, position="identity")+
+  theme_tufte()+
+  scale_x_continuous(limits = c(300,900))
+
+grid.arrange(a1,a2,nrow=2)
+
+```
+
+Having a look at the two different credit ratings provided by the data set, I can readily see that both are quite normally distributed. The **ProsperScore**, which is calculated by the Prosper Platform on a discrete scale has an average of about 6. The **CreditScore** which is provided by an external consumer credit rating agency is measured at a continuous scale and the upper and lower bound only differ a little averaging at about 700.
+
+
+## Other
+
+Finally, I will look at some other variables which may help to identify risky loans on Prosper.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, webgl=TRUE}
+
+#AmountDelinquent
+d1<-ggplot(daten,aes(x=AmountDelinquent))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()
+
+#DelinquenciesLast7Years 
+d2<-ggplot(daten,aes(x=DelinquenciesLast7Years))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()
+
+#ProsperPaymentsOneMonthPlusLate
+d3<-ggplot(daten,aes(x=ProsperPaymentsOneMonthPlusLate))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()
+
+#DebtToIncomeRatio
+d4<-ggplot(daten,aes(x=DebtToIncomeRatio))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  scale_x_continuous(limits=c(0,2),labels = scales::percent)+
+  geom_vline(aes(xintercept=mean(DebtToIncomeRatio, na.rm=T)),
+               color="red", linetype="dashed", size=1)
+
+grid.arrange(d1,d2,d3,d4,nrow=2,ncol=2)
+
+
+```
+
+From the plots above, I can conclude that these variables are highly skewed and they are probably only useful for special cases where loans are not performing or likely to default in the near future. However, the plots show that only very few borrowers on Prosper have outstanding or late payments as well as only few delinquencies recorded in the last seven years. Moreover, the DebtToIncome Ratio for almost all borrowers on Prosper lies well below 50%, which is a reasonable ratio.
+
+# Univariate Analysis
+
+#### What is the structure of your data set?
+
+The data set at hand contains 113,937 loans with 81 variables on each loan, including loan amount, borrower rate (or interest rate), current loan status, borrower income, borrower employment status, borrower credit history, and the latest payment information. The dataset contains loans created between 2005-Q4 and 2014-Q1. In my analysis I focused on **24** variables.
+
+#### What is/are the main feature(s) of interest in your data set?
+
+There are a number of features in the data set which are interesting to explore. First, it will be interesting to examine **loan performance** in greater detail. Therefore, I will have a look at a number of variables, that might influence loan performance.
+
+Second, **actual returns** are very important for investors and will eventually determine the success of the Prosper platform. The higher actual returns the more investors will be attracted and the more successful will Prosper become. 
+
+Third, it will be interesting to see how Prosper **developed over time**, since we could already see interesting patterns regarding the number of listings over the past years.
+
+#### What other features in the data set do you think will help support your investigation into your feature(s) of interest?
+
+Regarding **loan performance** I expect that credit ratings, interest rates and borrower income will be good predictors of loan performance. Moreover, I expect that **actual returns** are also closely related to **loan performance**. Finally, I will look at the changes of **loan performance** and **actual returns** over time and I will try to identify reasons for Prosper's success in recent years.
+
+#### Did you create any new variables from existing variables in the data set?
+
+I calculated a new variable **Actual Return**, since there was no such information available in the data set. However, information such as loan amounts, customer payments, losses, and fees are available in the data set and therefore actual return can be calculated (Note: Actual returns were only calculated for closed loans).
+Additionally, I created a variable named **Status** which categorizes the loan status into performing and non-performing loans.
+
+#### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+
+For the variables **AmountDelinquent**, **DelinquenciesLast7Years**, **ProsperPaymentsOneMonthPlusLate** and **TotalProsperLoans** I observed highly skewed and unusual distributions. This is the case because most loans in the data set have either no data recorded or a value of 0. 
+For **ActualReturns** I observed an unusual distribution of negative returns, which is caused by defaulted loans on Prosper. 
+
+In order to display factor levels in chronological order I re-ordered default factor levels to make more intuitive sense when displayed in a bar chart. Moreover, I used dplyr to group, summarise and join data frames.
+
+# Bivariate Plots Section
+
+In the following section I will look at two variables at a time to reveal interesting interactions between variables.
+
+```{r, message=FALSE, warning=FALSE, include=FALSE,echo=FALSE}
+# Removing top and lowest 1% as outliers
+
+corrmat<-subset(daten,CreditScoreRangeUpper >
+                quantile(daten$CreditScoreRangeUpper,na.rm = TRUE,probs=0.01) &
+                CreditScoreRangeLower >
+                quantile(daten$CreditScoreRangeLower,na.rm = TRUE,probs=0.01) &
+                AmountDelinquent < 
+                quantile(daten$AmountDelinquent,na.rm = TRUE,probs=0.99) &
+                DelinquenciesLast7Years < 
+                quantile(daten$DelinquenciesLast7Years,na.rm = TRUE,probs=0.99) &
+                DebtToIncomeRatio < 
+                quantile(daten$DebtToIncomeRatio,na.rm = TRUE,probs=0.99) &
+                StatedMonthlyIncome < 
+                quantile(daten$StatedMonthlyIncome,na.rm = TRUE,probs=0.99) &
+                TotalProsperLoans < 
+                quantile(daten$TotalProsperLoans,na.rm = TRUE,probs=0.99) &
+                ProsperPaymentsOneMonthPlusLate < 
+                quantile(daten$ProsperPaymentsOneMonthPlusLate,na.rm = TRUE,probs=0.99))
+```
+
+## Correlation Matrix
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+
+
+
+#Subset Data
+desel<-c("ListingNumber","ListingCreationDate","LoanStatus","ListingCategory..numeric.","BorrowerState","Occupation","Term","EmploymentStatus",
+         "LoanOriginationQuarter","LP_InterestandFees","LP_ServiceFees",
+         "LP_CollectionFees","LP_GrossPrincipalLoss","ClosedDate")
+
+corr<-corrmat[,!(names(daten) %in% desel)]
+
+
+corrgram(corr, order=NULL, lower.panel=panel.shade,
+  upper.panel=NULL, text.panel=panel.txt)
+
+```
+
+In order to get a sense of correlations among the numeric variables in the data set I calculated a correlation matrix. To avoid distortions of my investigation, I considered the top and lowest 1% of the distributions of the following variables as outliers for calculating the correlations above: **CreditScoreRangeUpper**,**CreditScoreRangeLower**, **AmountDelinquent**,**DelinquenciesLast7Years**,**DebtToIncomeRatio**,**StatedMonthlyIncome**,**TotalProsperLoans** and **ProsperPaymentsOneMonthPlusLate**.
+
+The visualisation above shows that only a few variables in the data set seem to be correlated (blue represents a positive relationship and red a negative). 
+**EmploymentStatusDuration**,**TotalProsperLoans**,**ProsperPaymentsOneMonthPlusLate** and **ActualReturn** seem not to be correlated with any of the other numeric variables. 
+
+## Scatter Matrix
+
+```{r echo=FALSE, eval=FALSE, message=FALSE, Bivariate_Plots,warning=FALSE, include=FALSE}
+s<- corrmat[sample(1:length(corrmat$ListingNumber),5000),]
+corr_s<-s[,!(names(s) %in% desel)]
+
+drops <- c("CreditScoreRangeLower","ProsperPaymentsOneMonthPlusLate",
+           "planned_close","cohort_closed","Category","Status","Quarter")
+pairs <- corr_s[,!(names(corr_s) %in% drops)]
+names(pairs)
+?pairs.panels(pairs,jiggle=TRUE,factor=4)
+
+```
+![](C:/Users/bockj/Udacity/Data Analyst Nanodegree/Part 5/6_Final_project/Scatter_Matrix.png)
+
+To get an broad overview, I created the scatter matrix above which includes a smoother for each pair of variable. For the correlated pairs of variables there seem to be some linear relationships, however, some relationships are non-linear. Moreover, the uncorrelated variables have pretty messy scatter plots, where no obvious relationship can be detected. 
+To get a better understanding of the correlated variables I also plotted them separately.
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+e1<-ggplot(daten,aes(x=BorrowerRate,y=EstimatedReturn))+
+  geom_point(alpha=1/60,size = 1, position = 'jitter')+
+  theme_tufte()+scale_color_brewer(type='div')+
+  scale_x_continuous(labels = scales::percent)+
+  scale_y_continuous(labels = scales::percent)+
+  geom_smooth(se=TRUE)
+
+
+e2<-ggplot(daten,aes(x=ProsperScore,y=BorrowerRate))+
+  geom_point(alpha=1/80,size = 1, position = 'jitter')+
+  theme_tufte()+scale_color_brewer(type='div')+
+  scale_y_continuous(labels = scales::percent)+
+  scale_x_continuous(breaks = seq(1,11,1))+
+  geom_smooth(se=TRUE)
+
+e3<-ggplot(subset(daten,CreditScoreRangeUpper!=0),
+       aes(x=CreditScoreRangeUpper,y=BorrowerRate))+
+  geom_point(alpha=1/60,size = 1, position = 'jitter')+
+  theme_tufte()+scale_color_brewer(type='div')+
+  scale_y_continuous(labels = scales::percent)+
+  geom_smooth()+
+  xlim(quantile(daten$CreditScoreRangeUpper,na.rm = TRUE,probs=0.005),
+       max(daten$CreditScoreRangeUpper))
+  
+
+e4<-ggplot(daten,aes(x=CreditScoreRangeUpper,y=ProsperScore))+
+  geom_point(alpha=1/60,position="jitter")+
+  theme_tufte()+
+  geom_smooth()+
+  xlim(quantile(daten$CreditScoreRangeUpper,probs = 0.01,na.rm = TRUE),
+       max(daten$CreditScoreRangeUpper))
+
+e5<-ggplot(daten,aes(x=CreditScoreRangeUpper,y=LoanOriginalAmount))+
+  geom_point(alpha=1/100,size = 1, position = 'jitter')+
+  theme_tufte()+scale_color_brewer(type='div')+
+  geom_smooth()+
+  coord_trans(y="log10",x="log10")+
+  xlim(quantile(daten$CreditScoreRangeUpper,na.rm = TRUE,probs=0.005),
+       max(daten$CreditScoreRangeUpper))
+
+e6<-ggplot(daten,aes(y=MonthlyLoanPayment,x=LoanOriginalAmount))+
+  geom_point(alpha=1/100,size = 1, position = 'jitter')+
+  theme_tufte()+scale_color_brewer(type='div')+
+  geom_smooth()
+
+grid.arrange(e1,e2,e3,e4,e5,e6,ncol=2,nrow=3)
+```
+
+Examining the bivariate relationships above, I can clearly identify a strong linear and positiv relationship between **BorrowerRate** and **EstimatedReturn**. This tells us a lot about how Prosper might calculate **EstimatedReturn** and the predictive power of this indicator for actual returns. A perfect linear relationship would suggests, that **BorrowerRate** is the only independent variable that determines **EstimatedReturn**. Even though there is some variation in the plot above which cannot be explained by the smoother (meaning that another variable may influence that variation), we will later see that this drastically changed over time. Moreover, we will see later in this analysis that returns for investors are not only dependent on **BorrowerRate**.
+
+There is also a strong linear and positive relationship between **LoanOriginalAmount** and **MonthlyLoanPayment**. This makes totally sense, since a higher loan amount automatically causes more interest to be paid and principal amount to be repaid.
+
+The remaining bivariate pairs of variables seem to relate to some extent. It seems that better credit ratings lead to a lower interest rate. Moreover, better credit ratings seem to allow borrowers to borrow a larger amount of money. Surprisingly, the external credit score and the Prosper score do not show a strong linear relationship. For example, there are many loans which receive bad external credit scores but very good Prosper scores. Later in this analysis, I will look into this in greater detail.
+Finally, since we can observe large variations not explained by the smoother, these more weakly correlated variables are likely to be influenced by more than one factor.
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+sub <- subset(daten,LoanStatus == closed & 
+                         cohort_closed!="" &
+                         ListingCreationDate<as.Date("2011-01-01")&
+                ListingCreationDate>as.Date("2010-08-01"))
+sub$dev <- sub$EstimatedReturn-sub$ActualReturn
+
+ggplot(sub,aes(x=dev))+
+  geom_histogram(color="black",fill=I("#099DD9"))+
+  theme_tufte()+
+  xlab("Estimated Return less Actual Return")+
+  geom_vline(aes(xintercept=quantile(dev, probs=0.75,na.rm=T)),
+               color="red", linetype="dashed", size=1)
+
+```
+
+After having looked into **EstimatedReturn** and after having found that its calculation is likely to be rather simplistic and solely based on **BorrowerRate**, I got curious how it is related to **actual returns**. 
+Therefore, I calculated a new variable which measures the difference between estimated return and actual return of a particular loan (where a negative difference indicates that actual returns were higher than estimated returns).
+From the plot above, one can see that for most loans the **EstimatedReturn** was less than the **actual return** (for about 75% of the loans). However, for about 25% of the loans Prosper over-estimated the return of the loan. 
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+quarterreturn<- subset(daten,LoanStatus == closed & 
+                         cohort_closed!="" &
+                         ListingCreationDate<as.Date("2011-01-01"))%>%
+  group_by(Quarter)%>%
+  summarise(avgret=mean(ActualReturn))
+
+ggplot(quarterreturn,aes(x=Quarter))+
+geom_bar(aes(y=avgret),color="black",fill=I("#099DD9"),stat = "identity")+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")+
+  ylab("MeanActualReturn")+
+  scale_x_yearqtr(format = "%Y-Q%q",
+                  breaks=seq(from= min(daten$Quarter), 
+                  to = max(daten$Quarter), by = 0.25))+
+  scale_y_continuous(labels = scales::percent)
+
+
+```
+
+In the univariate analysis we have seen that Prosper experienced some major problems throughout the years but strongly increased the number of listings in recent years. The chart above might be one explanation for Prosper's success. As you can see, **actual returns** were on average pretty bad for the pre 2009-Q2 period. But since the second quarter of 2009 **actual returns** for investors were on average constantly positive and around 10%, which is a fairly good return.
+*Please note that the chart above only includes periods up until the first quarter of 2011, since after that date not all loans have had the chance to close in time (maximum term of 60 months on Prosper).*
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+# Box Plots overtime. Borrower Rate is probably dependend on scoring, hence estimated return is dependent on scoring
+
+
+f1<-ggplot(daten,aes(x=as.factor(Quarter),y=CreditScoreRangeUpper))+
+  geom_boxplot()+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")+
+  ylim(quantile(daten$CreditScoreRangeUpper,na.rm = TRUE,probs=0.005),
+       max(daten$CreditScoreRangeUpper))
+
+f2<-ggplot(daten,aes(x=as.factor(Quarter),y=LoanOriginalAmount))+
+  geom_boxplot()+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")
+
+f3<-ggplot(daten,aes(x=as.factor(Quarter),y=StatedMonthlyIncome))+
+  geom_boxplot()+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")+
+  ylim(min(daten$StatedMonthlyIncome),
+       quantile(daten$StatedMonthlyIncome,na.rm = TRUE,probs=0.995))
+
+
+f4<-ggplot(daten,aes(x=as.factor(Quarter),y=DebtToIncomeRatio))+
+  geom_boxplot()+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")+
+  ylim(min(daten$DebtToIncomeRatio),
+       quantile(daten$DebtToIncomeRatio,na.rm = TRUE,probs=0.98))
+
+grid.arrange(f1,f3,ncol=1,nrow=2)
+```
+
+A possible explanation for increasing returns for investors may be the increasing quality of loans. The box plot above shows that median **CreditScores** constantly increased over the past years. Moreover, the box plot on **CreditScores** reveals what major policy change at Prosper in 2009 shifted the trend for **ActualReturns**. The lower whiskers, which were substantially higher from 2009 onwards, indicate that the minimum required **creditScore** to receive a loan on Prosper increased. This led higher actual return because fewer loans defaulted, which we will see from the plots below.
+Moreover, the **monthly income** of borrowers on Prosper did not change over the years, which confirms our findings from the correlation analysis above.
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+# Percentage of non performing loans over time
+
+non_current <- subset(daten, LoanStatus!="Current" & Term!=60 & 
+                        ListingCreationDate < as.Date("2011-03-11"))
+
+return <- non_current %>%
+  group_by(Quarter) %>%
+  summarise(return=mean(EstimatedReturn,na.rm=TRUE))
+
+group_qrt_status <- non_current %>%
+  group_by(Quarter,Status) %>%
+  summarise(n=n()) %>%
+  mutate(NonPerformingofTotal = n/sum(n)) %>%
+  filter(Status=="NonPerforming")
+
+ group_qrt_status <- left_join(group_qrt_status,return,by=c("Quarter"="Quarter"))
+
+
+
+g1<-ggplot(group_qrt_status,aes(x=Quarter))+
+  geom_bar(aes(y=NonPerformingofTotal),color="black",fill=I("#099DD9"),stat = "identity")+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")+
+  ylab("Share of Non Performing Loans")+
+  scale_x_yearqtr(format = "%Y-Q%q",
+                  breaks=seq(from= min(daten$Quarter), 
+                  to = max(daten$Quarter), by = 0.25))+
+  scale_y_continuous(labels = scales::percent)
+
+# Interest rates over time
+group_I <- daten %>%
+  group_by(Quarter) %>%
+  summarise(I=mean(BorrowerRate)) 
+
+
+g2<-ggplot(group_I,aes(x=Quarter,y=I))+
+  geom_line()+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")+
+  ylab("Interest Rate")+
+  scale_x_yearqtr(format = "%Y-Q%q",
+                  breaks=seq(from= min(daten$Quarter), 
+                  to = max(daten$Quarter), by = 0.25))+
+  scale_y_continuous(labels = scales::percent)
+
+grid.arrange(g1,g2,nrow=2,ncol=1)
+```
+
+As I have expected above, the **share of non-performing loans** suddenly decreased in the second quarter of 2009, which can be explained by an increasing creditworthiness of borrowers on Prosper. This decrease in defaulting loans likely increased the improvement of returns for investors on Prosper. 
+Moreover, from the line chart above I found that **interest rates** also increased from 2009-Q2 until 2011-Q1. This may also be an explanation for improving actual returns from 2009-Q2 onwards, as both variables correlate with each other.
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+grid.arrange(f2,f4,ncol=1,nrow=2)
+```
+
+So far we have seen that **CreditScores** correlate with **LoanOriginalAmount** and **CreditScores** of borrowers on Prosper have increased over the past years. Accordingly, we can observe an increase in the **LoanOriginalAmount** over the past years. 
+Additionally, I was curious whether the **DebtToIncomeRatio** improved over the past years, since the credit ratings also improved. However, I found that the opposite is the case. The **DebtToIncomeRatio** increased over the past years, which suggests a weak relationship to **CreditScores**. But looking at the data this development actually is not as surprising as it seems. This is because we have seen that the borrower's **income** has remained constant while **loan amounts** have increased, which must eventually lead to a worse **DebtToIncomeRatio**.
+
+To summarize, we have seen that actual returns on Prosper improved most likely because of better credit ratings and fewer defaulting loans. However, we have not yet found reasons why credit ratings improved. So let's rather look for reasons why loans default on Prosper.
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+# Grouped by Performing and non-performing (CATEGORICAL)
+
+non_current <- subset(daten, LoanStatus!="Current" &  Term!=60 &
+                        ListingCreationDate < as.Date("2011-03-11"))
+
+group_Term <- non_current%>%
+  group_by(Term,Status)%>%
+  summarise(n=n()) %>%
+  mutate(ShareofNonPerforming = n/sum(n)) %>%
+  filter(Status=="NonPerforming")
+
+group_Empstatus <- non_current%>%
+  group_by(EmploymentStatus,Status)%>%
+  summarise(n=n()) %>%
+  mutate(ShareofNonPerforming = n/sum(n)) %>%
+  filter(Status=="NonPerforming")
+
+l1<-ggplot(group_Term,aes(x=as.factor(Term),y=ShareofNonPerforming))+
+  geom_col(color="black",fill=I("#099DD9"))+
+  xlab("Term")+
+  theme_tufte()
+l2<-ggplot(subset(group_Empstatus,EmploymentStatus!=""&EmploymentStatus!="Not available"),aes(x=EmploymentStatus,y=ShareofNonPerforming))+
+  geom_col(color="black",fill=I("#099DD9"))+
+  xlab("EmploymentStatus")+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+grid.arrange(l1,l2,ncol=2)
+```
+
+First, the bar charts above indicate that 36 months loans have the highest proportion of non-performing loans. It is important to note that most loans on Prosper have a **duration** of 3 years, therefore it is not surprising that these loans also have the highest proportion of non-performing loans. Besides that it also makes sense that loans with longer duration are more likely to default since in 3 years time a lot can happen which worsens a borrower's ability to pay back its debt.
+
+Second, it is not surprising that **EmploymentStatus** has predictive power for loan performance. Borrowers who are in employment status "Self-employed" or "Retired" have the highest likelihood of defaulting.
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+# Grouped by Performing and non-performing (Numerical)
+
+p<-plot_ly(subset(daten,
+    StatedMonthlyIncome<quantile(StatedMonthlyIncome,na.rm = TRUE,probs = 0.98)),
+    x=~Status) %>%
+  add_boxplot(y=~ProsperScore,name="A")%>%
+  add_boxplot(y=~CreditScoreRangeUpper,name="B",visible = F)%>%
+  add_boxplot(y=~BorrowerRate,name="c",visible = F)%>%
+  add_boxplot(y=~EstimatedReturn,name="D",visible = F)%>%
+  add_boxplot(y=~StatedMonthlyIncome,name="H",visible = F)%>%
+  add_boxplot(y=~LoanOriginalAmount,name="I",visible = F)%>%
+  layout(
+    xaxis = list(domain = c(0.1, 1)),
+    yaxis = list(title = "y"),
+    updatemenus = list(
+      list(
+        y = 0.2,
+        buttons = list(
+          list(method = "restyle",
+               args = list("visible", list(TRUE, FALSE,FALSE, FALSE, FALSE, 
+                                           FALSE)),
+               label = "ProsperScore"),
+
+          list(method = "restyle",
+               args = list("visible", list(FALSE, TRUE,FALSE, FALSE, FALSE, 
+                                           FALSE)),
+               label = "CreditScoreRangeUpper"),
+
+          list(method = "restyle",
+               args = list("visible", list(FALSE, FALSE,TRUE, FALSE, FALSE, 
+                                           FALSE)),
+               label = "BorrowerRate"),
+
+          list(method = "restyle",
+               args = list("visible", list(FALSE, FALSE,FALSE, TRUE, FALSE, 
+                                           FALSE)),
+               label = "EstimatedReturn"),
+
+          list(method = "restyle",
+               args = list("visible", list(FALSE, FALSE,FALSE, FALSE, TRUE, 
+                                           FALSE)),
+               label = "StatedMonthlyIncome"),
+
+          list(method = "restyle",
+               args = list("visible", list(FALSE, FALSE,FALSE, FALSE, FALSE, 
+                                          TRUE)),
+               label = "LoanOriginalAmount")))
+    )
+  )
+p
+
+```
+
+Looking for more variables that have predictive power to anticipate loan performance, I created an interactive box plot visualisation of 6 variables, which all show differences between performing and non-performing loans. Most significantly, there is a clear difference in **CreditScores** and **EstimatedReturn** between performing and non-performing loans. 
+
+Higher **CreditScores**, **ProsperScores**, **MonthlyIncomes** and **LoanOriginalAmounts** are indicative of performing loans. Moreover, lower **BorrowerRates** and **EstimatedReturns** are indicative of performing loans. And vice versa.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+
+forestdata <- subset(daten, 
+                  select = c("Status","CreditScoreRangeUpper","EstimatedReturn",
+                             "ProsperScore","StatedMonthlyIncome"))
+
+forestdata<-na.omit(forestdata)
+
+samp <- sample(nrow(forestdata), 0.6 * nrow(forestdata))
+train <- forestdata[samp, ]
+test <- forestdata[-samp, ]
+table(train$Status)
+
+# Create the forest.
+forest <- randomForest(Status ~ StatedMonthlyIncome+ProsperScore+CreditScoreRangeUpper, 
+           data = train,classwt=c(0.7,0.3))
+
+
+# View the forest results.
+print(forest) 
+plot(forest)
+
+pred <- predict(forest, newdata = test)
+
+table(pred, test$Status)[1]/table(test$Status)[1]
+
+table(pred, test$Status)[4]/nrow(test)
+```
+
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
+
+In the bivariate analysis of the data set I found several interesting relationships between my features of interest and other variables in the data set. 
+First, I had a look at **actual return** over time and factors possibly driving them. I found that actual returns were on average pretty bad for the pre 2009-Q2 period. But since the second quarter of 2009 until 2011 actual returns for investors were on average constantly positive and around 10%. I think this might be a possible explanation for Prosper's success since 2009.
+Moreover, I investigated what variables possibly explain why actual returns increased. I found that improving **CreditRatings** and higher **BorrowerRates** may have caused actual returns to rise.
+
+Second, I investigated **loan performance** over time and I tried to figure out, what features are relevant to assess the probability of default. I figured out that along with the improvement of **CreditScores** since 2009, the share of non-performing loans on Prosper significantly dropped. 
+Moreover, I found a number of variables with predictive power for loan performance. The following relationships were pretty clear. Lower **CreditScores**, **ProsperScores**, **MonthlyIncomes** and **LoanOriginalAmounts** are indicative of non-performing loans. Moreover, higher **LoanDuration**, **BorrowerRates** and **EstimatedReturns** are indicative of non-performing loans.
+
+### Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?
+
+Investigating the variable **EstimatedReturn** in greater detail revealed some interesting insight. I found that this metrics, which is calculated by Prosper, is almost solely dependent on the BorrowerRate suggesting a rather simple and linear calculation of this metrics. Since loan performance is dependent on a number of factors, I expected that EstimatedReturn is a weak predictor of loan defaults.
+But this turned out to be not the case. **EstimatedReturns** substantially differ for performing and non-performing loans, which suggests predictive power of that metrics. Moreover, comparing actual vs estimated returns, I found that Prosper over-estimated returns for only about 25% of the loans.
+
+### What was the strongest relationship you found?
+
+I think the strongest relationship I found is that better credit ratings substantially improved actual returns for investors, which in turn is very likely the reason for Prosper's success. Moreover, I found pretty strong relationships between loan performance and a number of variables, which contain predictive information on whether a loan will default or not.
+
+# Multivariate Plots Section
+
+In the following section I will try to grasp the multivariate relationships among variables, which are important to understand since not all variations in the data can be explained by one or two independent variables.
+
+## Charts section
+
+```{r, echo=FALSE,message=FALSE, warning=FALSE}
+# Estimated Return and Borrower Rate relationship
+
+
+ggplot(subset(daten,
+      !(Year %in%c("2005","2006","2007","2008"))),
+       aes(x=BorrowerRate,y=EstimatedReturn))+
+  geom_point(alpha=1/60,size = 1, position = 'jitter')+
+  theme_tufte()+scale_color_brewer(type='div')+
+  scale_x_continuous(labels = scales::percent)+
+  scale_y_continuous(labels = scales::percent)+
+  geom_smooth(se=TRUE)+
+  facet_wrap(~Year)
+```
+
+The chart above is an extension of the scatter plot which we already saw in the last section. It shows the relationship between **BorrowerRate** and **EstimatedReturn** over time. The linear relationship between the variables significantly increased over time and was in 2014 almost perfectly linear. This shows that it is likely that by now Prosper calculates **EstimatedReturn** simply by deducting a fixed percentage from the **BorrowerRate** for service fees and other fixed effects. Unfortunatly, due to missing data I am not able to investigate how this method reflects the true returns.
+
+```{r, echo=FALSE,message=FALSE, warning=FALSE}
+#CreaditScoreRangeUpper, BorrowerRate & Status
+
+ggplot(daten,
+       aes(x=CreditScoreRangeUpper,y=BorrowerRate,color=Status))+
+  geom_point(alpha=1/2,size = 1, position = 'jitter')+
+  theme_tufte()+
+  scale_color_brewer(type='div',
+    guide = guide_legend(title = 'Status', reverse = T,
+    override.aes = list(alpha = 1, size = 2)))+
+  scale_y_continuous(labels = scales::percent)+
+  xlim(quantile(daten$CreditScoreRangeUpper,na.rm = TRUE,probs=0.005),
+       max(daten$CreditScoreRangeUpper))
+ 
+
+
+```
+
+From the plot above we can see that most **defaulting loans**, have paid higher **interest rates** and received worse **credit ratings** than performing loans. However, there are many cases where defaulting loans have either paid relatively low interest, received very good credit ratings or both. This clearly is a weakness of the Prosper Platform, since it fails to compensate investors who bear a higher risks with adequate interest in a quite a lot of cases. 
+
+
+```{r, echo=FALSE,message=FALSE, warning=FALSE}
+#Facets: Non-performing over time facetted by ProsperScore
+
+non_current <- subset(daten, LoanStatus!="Current" & Term!=60 & 
+                        ListingCreationDate < as.Date("2011-03-11")&
+                        !is.na(ProsperScore))
+
+
+group_qrt_status_prosp <- non_current %>%
+  group_by(Quarter,Status,ProsperScore) %>%
+  summarise(n=n())
+
+score<-non_current %>% group_by(ProsperScore) %>%
+  summarise(count=n())%>%
+  mutate(sum=sum(count),Share_of_total_loans=count/sum)
+
+t<- non_current %>% group_by(Quarter,ProsperScore) %>%
+  summarise(t=n())
+
+t<- left_join(t,score,by=c("ProsperScore"="ProsperScore"))
+
+group_qrt_status_prosp <- left_join(group_qrt_status_prosp,t,by=c("Quarter"="Quarter",                                                        "ProsperScore"="ProsperScore"))
+
+group_qrt_status_prosp$ShareNonPerform <-group_qrt_status_prosp$n/group_qrt_status_prosp$t
+group_qrt_status_prosp<-filter(group_qrt_status_prosp,Status=="NonPerforming")
+group_qrt_status_prosp<-na.omit(group_qrt_status_prosp)
+
+ggplot(group_qrt_status_prosp,aes(x=as.factor(Quarter),y=ShareNonPerform,
+                                  fill=Share_of_total_loans))+
+  geom_col()+
+  facet_grid(~ProsperScore)+
+  theme_classic()+
+  scale_y_continuous(labels = scales::percent)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  ggtitle("Share of non-performing loans by ProsperScore (excl. 60 months duration)")+
+  ylab("Share of non-Performing Loans")+
+  xlab("Loan Origination Quarter")+
+  scale_x_discrete(breaks=c("2009 Q3","2010 Q2","2011 Q1"))
+
+```
+
+The chart above looks at **non-performing loans** for each **ProsperScore over time** and only includes loans that should have closed already. This avoids that the share of non-performing loans relative to total loans is not misleading because the share would automatically decrease as the amount of active loans increases. The ProsperScore categories are colored by importance measured by the number of loans in that category relative to total number of loans.
+From the plot it can be observed that there is a difference in the share of non-performing loans between good and bad ProserScores. Especially the most important and intended low-risk categories 8 and 9 also have lower default rates compared to worse Prosper scores.
+However, it can also be argued that the difference in default rate between the most important ProsperScores 5 to 9 are not really significant. Moreover, Prosper was not able to significantly decrease the default rate over the past years in its most important Prosper Score categories. I think this is a weakness and a potential threat to its business.
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+# Mean income & percentage not performing by occupation
+
+# x-axis: CreditScoreRangeUpper, StatedMonthlyIncome
+
+avgincome <- subset(daten,Occupation!="") %>%
+  group_by(Occupation) %>%
+  summarise(avg=mean(StatedMonthlyIncome),InterestRate=mean(BorrowerRate)) 
+
+occ_status <- subset(daten,Occupation!="") %>%
+  group_by(Occupation,Status) %>%
+  summarise(n=n()) %>%
+  mutate(NonPerformingofTotal = n/sum(n),Total=sum(n)) %>%
+  filter(Status=="NonPerforming",Occupation!="Other")
+
+avgincome<-dplyr::left_join(avgincome,occ_status,by="Occupation")
+
+ply <- ggplot(data = avgincome, aes(x = avg, y = NonPerformingofTotal,
+                                  colour = InterestRate,size=Total)) +
+  geom_point(aes(text = paste("Occupation:", Occupation)))+
+  geom_smooth(se=FALSE,colour="orange")+
+  theme_tufte()+
+  xlab("MeanIncome")+
+  ylab("Non Performing Loans (in % of Total)")+
+  scale_y_continuous(labels = scales::percent)+
+  ggtitle("Non-performing loans vs income vs interest rate grouped by occupation")
+
+ggplotly(ply)
+
+```
+
+To investigate loan performance for different occupations I created the interactive scatter plot above, which shows occupation info when hovering over the data points. Moreover, the bubble size indicates the number of loans and the coloring represents the average interest rate for that specific occupation.
+The top left group of occupations includes students and homemaker. This group has the highest share of non-performing loans, the lowest income and pays the most interest. 
+The bottom right group of occupations includes doctors, attorneys, judges and executives. This group has the lowest share of non-performing loans, the highest income and pays the least interest. 
+Generally speaking, the plot also shows that the higher the income the lower the share of non-performing loans and the lower the borrower rate.
+Maybe you remember from the beginning of this analysis that I was wondering why there are so many Executives borrowing on Prosper. I hypothesized that Prosper is offering an attractive interest rate, but this turns out to be most likely not the reason since Executives pay an average of 18% of interest, which is quite a lot. Hence, there must be another reason why creditworthy people borrow on Prosper. I can only guess that it is a much easier and much faster way to borrow money.
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, webgl=TRUE}
+# CreditScoreRangeUpper & percentage not performing by Category
+
+
+avgincome <- subset(daten,Category!="") %>%
+  group_by(Category) %>%
+  summarise(avg=mean(CreditScoreRangeUpper),Interest=mean(BorrowerRate,na.rm=TRUE)) 
+
+Category_status <- subset(daten,Category!="") %>%
+  group_by(Category,Status) %>%
+  summarise(n=n()) %>%
+  mutate(NonPerformingofTotal = n/sum(n),Total=sum(n)) %>%
+  filter(Status=="NonPerforming",Category!="Not Available")
+
+avgincome<-dplyr::left_join(avgincome,Category_status,by="Category")
+
+p <- ggplot(data = avgincome, aes(x = avg, y = NonPerformingofTotal,
+                                  colour=Interest)) +
+  geom_point(aes(text = paste("Category:", Category),size=Total))+
+  geom_smooth(se=FALSE)+
+  theme_tufte()+
+  xlab("CreditScoreRangeUpper")+
+  ylab("Non Performing Loans (in % of Total)")+
+  scale_y_continuous(labels = scales::percent)+
+  ggtitle("Non-performing loans and Mean-CreditScore grouped by Category")
+
+ggplotly(p)
+
+```
+
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+# CreditScoreRangeUpper & percentage not performing by BorrowerState
+
+# x-axis: CreditScoreRangeUpper, StatedMonthlyIncome
+
+avgincome <- subset(daten,BorrowerState!="") %>%
+  group_by(BorrowerState) %>%
+  summarise(avg=mean(CreditScoreRangeUpper),median_income=median(StatedMonthlyIncome)) 
+
+BS_status <- subset(daten,BorrowerState!="") %>%
+  group_by(BorrowerState,Status) %>%
+  summarise(n=n()) %>%
+  mutate(NonPerformingofTotal = n/sum(n),Total=sum(n)) %>%
+  filter(Status=="NonPerforming",BorrowerState!="ND")
+
+avgincome<-dplyr::left_join(avgincome,BS_status,by="BorrowerState")
+
+p <- ggplot(data = avgincome, aes(x = avg, y = NonPerformingofTotal,
+                                  colour=median_income)) +
+  geom_point(aes(text = paste("BorrowerState:", BorrowerState),size=Total))+
+  geom_smooth(se=FALSE,color="orange")+
+  theme_tufte()+
+  xlab("CreditScoreRangeUpper")+
+  ylab("Non Performing Loans (in % of Total)")+
+  scale_y_continuous(labels = scales::percent)+
+  ggtitle("Non-performing loans vs CreditScore vs income grouped by state")
+
+ggplotly(p)
+
+```
+
+Besides occupation I also got curious to look at different states. From the plot above one can immediately see that Iowa and Maine are the worst performing states as they have the highest share of non-performing loans and the worst credit ratings. Nebraska, Alaska and Wyoming have the lowest share of non-performing loans. Also looking at the median income it is apparent that a higher credit scores tends to be associated with a higher median income on average. The highest median income seems to be earned in DC, where the share of non-performing loans is also relatively low (~10%).
+
+
+```{r, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, results='asis', tidy=FALSE}
+# Add time var too previously found patterns
+
+grouped_occ<-subset(daten,Occupation!="") %>%
+  group_by(Quarter,Occupation) %>% summarise_each(funs(mean(., na.rm = TRUE)))
+
+desel<-c("ListingNumber","LoanStatus","ListingCategory..numeric.","BorrowerState",
+         "Term","EmploymentStatus",
+         "LoanOriginationQuarter","LP_InterestandFees","LP_ServiceFees",
+         "LP_CollectionFees","LP_GrossPrincipalLoss","ClosedDate","Status",
+         "Category","planned_close","cohort_closed","TotalProsperLoans",
+         "ProsperPaymentsOneMonthPlusLate","AmountDelinquent","Quarter",
+         "EstimatedReturn","ProsperScore")
+
+grouped_occ<-grouped_occ[,!(names(grouped_occ) %in% desel)]
+grouped_occ<-na.omit(grouped_occ)
+
+M<-gvisMotionChart(grouped_occ,"Occupation","ListingCreationDate")
+plot(M)
+
+
+```
+
+
+
+## Parallel Coordinates
+```{r echo=FALSE, webgl=TRUE}
+
+paarcor <- loan_sample
+
+#Calculate z-Score of BorrowerRate for statistical coloring
+paarcor$z<-(paarcor$BorrowerRate-mean(paarcor$BorrowerRate))/ sd(paarcor$BorrowerRate)
+
+paarcor <- subset(paarcor,select = c("BorrowerRate", "EstimatedReturn", "ProsperScore", "DebtToIncomeRatio", "MonthlyLoanPayment", "StatedMonthlyIncome", "LoanOriginalAmount", "Status", "z"))
+
+#Cleaning outliers
+paarcor<-subset(paarcor,paarcor$DebtToIncomeRatio<1 & 
+                      paarcor$StatedMonthlyIncome<20000 & paarcor$LoanOriginalAmount<=25000 & paarcor$MonthlyLoanPayment<=800)
+
+paarcor<-na.omit(paarcor)
+
+parcoords(paarcor,
+          reorderable = T,rownames=F,queue = T,
+          brushMode = "1D-axes-multi",
+          composite = "darken",width=1220,height =600,
+          alpha =0.5,
+          color = list(
+            colorBy="z",
+            colorScale=htmlwidgets::JS('d3.scale.linear().domain([-2,-0.5,0.5,2]).range(["brown", "#999", "#999", "steelblue"]).interpolate(d3.interpolateLab)')
+          ))
+           
+```
+
+To get an idea of the relationships between 8 variables at a time, it may sometimes be useful to plot an interactive parallel coordinates chart like the one above. In the plot above each line represents one observation and each oberservation is colored by its z-score based on borrower rate. 
+By re-ordering the columns or applying value filters one can fairly quickly grasp the relationships between borrower rates and the other 7 variables. 
+From the chart above it is apparent that lower borrower rates are associated with lower estimated returns, higher Prosper scores and lower debt to income ratios. However, when looking at MonthlyLoanPayment, StatedMonthlyIncome and LoanOriginalAmount no clear relationship is observable. 
+Using a filter to look at high borrower rate observations only, it is obviously the case that most of these loans have low MonthlyLoanPayments, low monthly income and a low loan amount. 
+Further relationships can be discovered, just play around with the filters a little bit (for instance try to apply a filter to the LoanOriginalAmount column and move it up and down, what can you observe?).
+
+## Heatmap
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Heatmap: 
+
+  
+b1<-ggplot(aes(y = as.factor(Term), x = CreditScoreRangeUpper, 
+           fill = ActualReturn),
+  data = subset(daten,cohort_closed!="")) +
+  geom_tile()+
+  theme_tufte()+
+  scale_fill_gradientn(colours = colorRampPalette(c("red", "green"))(100))+
+  scale_x_continuous(limits = 
+                       c(quantile(daten$CreditScoreRangeUpper,
+                                  na.rm=TRUE,probs = 0.02),
+                                max(daten$CreditScoreRangeUpper)))+ theme(legend.position="top")+
+  ylab("Term")
+
+b2<-ggplot(aes(y = Status, x = CreditScoreRangeUpper, 
+           fill = ActualReturn),
+  data = subset(daten,cohort_closed!="")) +
+  geom_tile()+
+  theme_tufte()+
+  scale_fill_gradientn(colours = colorRampPalette(c("red", "green"))(100))+
+  scale_x_continuous(limits = 
+                       c(quantile(daten$CreditScoreRangeUpper,
+                                  na.rm=TRUE,probs = 0.02),
+                                max(daten$CreditScoreRangeUpper)))+ theme(legend.position="top")
+
+b3<-ggplot(aes(y = as.factor(Term), x = ProsperScore, 
+           fill = ActualReturn),
+  data = subset(daten,cohort_closed!="")) +
+  geom_tile()+
+  theme_tufte()+
+  scale_fill_gradientn(colours = colorRampPalette(c("red", "green"))(100))+ theme(legend.position="none")+
+  ylab("Term")
+
+b4<-ggplot(aes(y = Status, x = ProsperScore, 
+           fill = ActualReturn),
+  data = subset(daten,cohort_closed!="")) +
+  geom_tile()+
+  theme_tufte()+
+  scale_fill_gradientn(colours = colorRampPalette(c("red", "green"))(100))+ theme(legend.position="none")
+
+grid.arrange(b1,b2,b3,b4,ncol=2,nrow=2)
+
+```
+
+Heatmaps are also a useful method to grasp multivariate relationships. In the plots above I compare external credit scores, Prosper scores, loan duration, loan performance and actual return.
+
+From the plot above, one can clearly see that both good ProsperScores and CreditScores are no guarantee for positive returns. Moreover, loans with 60 months duration are more likely to result in losses than 12 and 36 months loans. 
+Not surprisingly, non-performing loans have mostly negative returns. However, it is interesting to see that non-performing loans with all levels of credit scores have negative returns, whereas non-performing loans with good ProsperScores can also have positive returns. This seems contradictory, however, high interest payments in the past may well overcompensate a small principal loss or late payments at the end. The ProsperScore seems to take this into account and therefore, high ProsperScores seem to be a better predictor of positive returns than external credit scores.
+
+```{r echo=FALSE, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE, webgl=TRUE}
+
+
+
+features     <- subset(corr,select = -Status)
+features <- as.data.frame(scale(features))
+corr<-na.omit(corr)
+features<-na.omit(features)
+
+tsne <- Rtsne(as.matrix(features), check_duplicates = FALSE, pca = TRUE, 
+              perplexity=40, theta=0.5, dims=2)
+################
+embedding <- as.data.frame(tsne$Y)
+embedding$Class <- as.factor(corr$Status)
+str(embedding)
+p<-qplot(x=embedding$V1, y=embedding$V2,col=embedding$Class)
+
+p
+
+```
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
+
+Looking further into **loan performance**, I found that most defaulting loans, have paid higher interest rates and received worse credit ratings than performing loans. However, there are many cases where defaulting loans have either paid relatively low interest, received very good credit ratings or both. This clearly is a weakness of the Prosper Platform, since it fails to compensate investors who bear a higher risks with adequate interest in a quite a lot of cases.
+
+Moreover, I found that **ProsperScore** is a good measure to predict **loan performance** and **actual returns**. Especially the most important and intended low-risk ProsperScores 8 and 9 have lower default rates compared to worse Prosper scores. However, it is also the case that the difference in default rate between the most important ProsperScores 5 to 9 are not really significant. Moreover, Prosper was not able to significantly decrease the share of non-performing loans over the past years.
+
+Finally, I found that specific jobs, states and loan duration have an influence on loan performance and actual returns.
+
+
+### Were there any interesting or surprising interactions between features?
+
+It was surprising to see that non-performing loans with all levels of external credit scores have negative returns, whereas non-performing loans with good ProsperScores can also have positive returns. This seems contradictory, however, high interest payments in the past may well overcompensate a small principal loss or late payments at the end. The ProsperScore seems to take this into account and therefore, high ProsperScores seem to be a better predictor of positive returns than external credit scores.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+ggplot(quarterreturn,aes(x=Quarter))+
+geom_bar(aes(y=avgret),color="black",fill=I("#099DD9"),stat = "identity")+
+  theme_tufte()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  xlab("LoanOriginationQuarter")+
+  ylab("MeanActualReturn")+
+  scale_x_yearqtr(format = "%Y-Q%q",
+                  breaks=seq(from= min(daten$Quarter), 
+                  to = max(daten$Quarter), by = 0.25))+
+  scale_y_continuous(labels = scales::percent)
+
+```
+
+### Description One
+
+In the plot above I look at the **average actual return** on the y-axis by **LoanOriginationQuarter** on the x-axis. *Please note that the chart above only includes periods up until the first quarter of 2011, since after that date actual returns could not be calculated for all loans (maximum term of 60 months on Prosper).*
+
+As you can see, actual returns were on average pretty bad for the pre 2009-Q2 period. But since the second quarter of 2009 actual returns for investors were on average constantly positive and around 10%, which is a fairly good return. This development might be one explanation for the strong increase in the number of listings on Prosper since 2009-Q2.
+
+### Plot Two
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(group_qrt_status_prosp,aes(x=as.factor(Quarter),y=ShareNonPerform,
+                                  fill=Share_of_total_loans))+
+  geom_col()+
+  facet_grid(~ProsperScore)+
+  theme_classic()+
+  scale_y_continuous(labels = scales::percent)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  ggtitle("Share of non-performing loans by ProsperScore (excl. 60 months duration)")+
+  ylab("Share of non-Performing Loans")+
+  xlab("Loan Origination Quarter")+
+  scale_x_discrete(breaks=c("2009 Q3","2010 Q2","2011 Q1"))
+```
+
+### Description Two
+
+The chart above shows the **share of non-performing loans** across all **ProsperScores** over time and is colored by the proportion for each ProsperScore relative to total loans. *Please note that the chart above only includes loans that should have close already to avoid that the share of non-performing loans relative to total loans is not misleading. Otherwise, the share would automatically decrease as the amount of active loans increases.*
+
+From the plot it can be observed that there is a difference in the share of non-performing loans between good and bad ProserScores (1 = Bad, 10 = Very good). Especially the most important and intended low-risk categories 8 and 9 also have lower default rates compared to worse Prosper scores. However, it can also be argued that the difference in default rate between the most important ProsperScores 5 to 9 are not really significant. Moreover, Prosper was not able to significantly decrease the default rate over the past years in its most important Prosper Score categories.
+
+### Plot Three
+```{r,echo=FALSE, message=FALSE, warning=FALSE,webgl=TRUE}
+
+ggplotly(ply)
+
+```
+
+### Description Three
+
+To investigate loan performance for different occupations I created the interactive scatter plot above. For each occupation the chart looks at the **average income** On the x-axis and the **share on non-performing loans** on the y-axis. Information on occupation is displayed when hovering over the data points. Moreover, for each occupation the bubble size indicates the **number of total loans** and the coloring the **average interest rate**.
+
+The top left group of occupations includes students and homemaker. This group has the highest share of non-performing loans, the lowest income and pays the most interest. The bottom right group of occupations includes doctors, attorneys, judges and executives. This group has the lowest share of non-performing loans, the highest income and pays the least interest. Generally speaking, the plot also shows that the higher the income the lower the share of non-performing loans and the lower the borrower rate. 
+
+------
+
+# Reflection
+
+In this analysis I learned a lot about visualizing with ggplot2 and other useful packages such as plotly, googlevis etc. Moreover, I successfully created sub-dataframes, aggregated variables and merged datasets with dplyr.
+
+The large amount of variables in the data set sometimes made it hard to keep track, since there are a lot of ways of combining different variables in order to find patterns. Therefore, during this project I learned that hypothesis-driven data exploration is a crucial skill to stay focused. 
+
+In my exploratory data analysis of the data set I found interesting patterns explaining loan performance, actual returns for investors and Prosper's success. However, I also found that Prosper implemented some changes to its business model in 2009 Q2. Therefore, an analysis of loans created before that date only has limited meaning if you want to draw conclusions about Proser as it operates today. The problem is that in many parts of my analysis I was forced to use these "old" loans since they were completed and all metrics could be calculated. Therefore, I am curious to see a more mature data set of the "new" Prosper.
