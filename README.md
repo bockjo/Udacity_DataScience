@@ -1,6 +1,6 @@
 # Udacity Data Analyst Nanodegree Project Portfolio
 
-This repo is a collection of my first projects, which I have done in order to complete the Udacity Data Analyst Nanodegree. <br><br>
+This repo is a collection of my first projects, which I have done in order to complete the ![Udacity Data Analyst Nanodegree](https://www.udacity.com/course/data-analyst-nanodegree--nd002?v=a). <br><br>
 Please use the following links to explore the projects which document my practical experience in Data Wrangling, Exploratory Data Analysis, Machine Learning and Data Visualization.
 
 ## Overview:
