@@ -11,4 +11,3 @@ Please use the following links to explore the projects which document my practic
 4) [Machine Learning (sklearn|SpaCy|Gensim)](http://nbviewer.jupyter.org/github/bockjo/Udacity_portfolio/blob/master/Person_of_Interest_Classifier_Enron.ipynb#topic=0&lambda=1&term=)<a href="url"><img src="https://www.python.org/static/favicon.ico" height="20" width="20" ></a> <br>
 5) [Data Visualization (D3.js|Sigma.js)]() <a href="url"> <img src="http://www.uidownload.com/files/541/586/346/code-command-develop-javascript-language-programming-software-icon.png" height="20" width="20" ></a> 
 <img src="https://www.python.org/static/favicon.ico" height="20" width="20" ></a> <br>
-6) [A/B Testing]() <br>
