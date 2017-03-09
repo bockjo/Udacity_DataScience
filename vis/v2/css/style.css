@@ -1,0 +1,91 @@
+h2 {
+	text-align: center;
+	color: black;
+	}
+
+
+body {
+  background-color: #eee;
+  font-size: 12px;
+}
+
+#extremes {
+  position: absolute;
+  top: 95%;
+  left: 40%;
+
+}
+
+#metric_drop_down {
+	position: absolute;
+  top: 95%;
+  left: 27%;
+
+}
+
+#grouping {
+	position: absolute;
+  top: 2%;
+  right: 20%;
+  font-weight: bolder;
+
+}
+
+#info_button{
+  position: absolute;
+  top: 95%;
+  left: 10%;
+  font-weight: bolder;
+  color: blue;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+#infopanel{
+  display:block;
+  position:absolute;
+  height:25%;
+  bottom:15%;
+  left:5%;
+  width: 25%;
+  background-color: #fff;
+  margin: 0;
+  word-wrap: break-word;
+  border-left: 1px solid #ccc;
+  padding: 0px 18px 0px 18px;
+}
+
+#infopanel .text {
+  height:100%;
+}
+
+#infopanel .headertext {
+  color: #000;
+  margin-bottom: 5px;
+  height: 14px;
+  padding: 0px 0 10px 0;
+  font-size:16px;
+  font-weight:bold;
+}
+
+#infopanel .description {
+  display:block;
+  height:85%;
+}
+
+#infopanel .name {
+font-size: 14px;
+cursor: default;
+padding-bottom: 10px;
+padding-top: 18px;
+font-weight:bold;
+}
+
+#close_button {
+position:absolute;
+  top:61%;
+  left:25%;
+  font-size:22px;
+  cursor:pointer;
+}
+

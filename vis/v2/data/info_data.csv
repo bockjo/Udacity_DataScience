@@ -1,0 +1,5 @@
+metric,description
+sentiment,"The sentiment score is a number within the range [-1.0, 1.0] where -1.0 is very negativ and 1.0 is very positive sentiment."
+review_length,The review_length is measured in number of words per review.
+subjectivity,"The subjectivity is a number within the range [0.0, 1.0] where 0.0 is very objective and 1.0 is very subjective."
+stars_rating,On Amazon customers can rate the product on a scale from 1 to 5 where 1 is the lowest possible rating and 5 is the highest possible rating.

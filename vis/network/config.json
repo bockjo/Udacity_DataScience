@@ -1,0 +1,58 @@
+{
+  "type": "network",
+  "version": "1.0",
+  "data": "data.json",
+  
+"logo": {
+    "file": "",
+    "link": "",
+    "text": "Johannes Bock"
+  },
+  
+"text": {
+    "more": "Each dot or node represents a single review. Each colored cluster represents a specific theme that the reviews within it share. This allows you to see how the whole ecosystem of reviews in any category connect with one another.",
+    "intro": "Review similarity",
+    "title": "Product Reviews"
+  },
+  
+"legend": {
+    "edgeLabel": "Similarity",
+    "colorLabel": "Cluster",
+    "nodeLabel": "Review title"
+  },
+  
+"features": {
+    "search": true,
+    "groupSelectorAttribute": "topic",
+    "hoverBehavior": "dim"
+  },
+  
+"informationPanel": {
+    "groupByEdgeDirection": false,
+    "imageAttribute": "Label" , "imageAttribute":false},
+  
+"sigma": {
+    "drawingProperties": {
+      "defaultEdgeType": "curve",
+      "defaultHoverLabelBGColor": "#002147",
+      "defaultLabelBGColor": "#ddd",
+      "activeFontStyle": "bold",
+      "defaultLabelColor": "#000",
+      "labelThreshold": 10,
+      "defaultLabelHoverColor": "#fff",
+      "fontStyle": "bold",
+      "hoverFontStyle": "bold",
+      "defaultLabelSize": 20    },
+    
+"graphProperties": {
+      "maxEdgeSize": 1,
+      "minEdgeSize": 0.5,
+      "minNodeSize": 0.5,
+      "maxNodeSize": 2
+    },
+    "mouseProperties": {
+      "maxRatio": 20,
+      "minRatio": 0.75
+    }
+  }
+}
