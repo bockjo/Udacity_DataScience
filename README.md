@@ -1,7 +1,7 @@
 # Udacity Data Analyst Nanodegree Project Portfolio
 
 This repo is a collection of my first projects, which I have done in order to complete the [Udacity Data Analyst Nanodegree](https://www.udacity.com/course/data-analyst-nanodegree--nd002?v=a). <br><br>
-Please use the following links to explore the projects which document my practical experience in Data Wrangling, Exploratory Data Analysis, Machine Learning and Data Visualization.
+Please use the following links to explore the projects which document some of my practical experience in Data Wrangling, Exploratory Data Analysis, Machine Learning and Data Visualization.
 
 ## Overview:
 1) [Data Exploration & Statistical Testing (numpy|pandas|matplotlib)](http://nbviewer.jupyter.org/github/bockjo/Udacity_portfolio/blob/master/Titanic_dataset_exploration.ipynb) <a href="url"><img src="https://www.python.org/static/favicon.ico" height="20" width="20" ></a> <br>
